@@ -1,0 +1,17 @@
+name: Deploys qa environment
+
+on:
+  push:
+    branches:
+      - qa
+permissions:
+  id-token: write  # Permitir el uso de OIDC
+  contents: read   # Permitir la lectura del repositorio
+  pull-requests: write # Permitir la creación de PRs
+
+jobs:
+  deploy-qa-environment:
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      stage: qa

@@ -1,0 +1,64 @@
+name: Deploy serverless api 
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: 'Stage for the environment (e.g. dev, qa, prod)'
+        required: true
+        type: string
+
+jobs:
+  deploys-sls-api:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Permiso necesario para OIDC
+      contents: read   # Permiso para leer el repositorio (opcional, según tus necesidades)
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set AWS Region and Assume Role based on Stage
+        id: set-aws-vars
+        run: |
+          if [ "${{ inputs.stage }}" == "dev" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_DEV }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_DEV }}" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.stage }}" == "qa" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_QA }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_QA }}" >> "$GITHUB_ENV"
+          fi
+
+      # Paso 2: Configurar las credenciales de AWS después de que las variables se establezcan correctamente
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}  # Usar el rol dinámico
+          aws-region: ${{ env.AWS_REGION }}        # Usar la región dinámica
+
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'  # Asegúrate de que coincida con tu runtime en serverless.yml
+
+      # 3. Install Serverless Framework
+      - name: Install Serverless Framework
+        run: npm install -g serverless@3.35.2
+
+      - name: Install serverless-domain-manager plugin
+        run: npm install --save-dev serverless-domain-manager
+
+        # 6. Deploy with Serverless Framework
+      - name: Deploy with Serverless
+        working-directory: ./hello-api
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }} 
+          STAGE: ${{ inputs.stage }}
+          API_DOMAIN: ${{ inputs.stage }}.${{vars.DOMAIN}}  # Reemplaza con tu dominio
+        run: sls deploy --stage ${{env.STAGE}} --region ${{env.AWS_REGION}}

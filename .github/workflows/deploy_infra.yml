@@ -1,0 +1,75 @@
+name: Deploy infra 
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: 'Stage for the environment (e.g. dev, qa, prod)'
+        required: true
+        type: string
+
+jobs:
+  deploys-infra:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Permiso necesario para OIDC
+      contents: read   # Permiso para leer el repositorio (opcional, según tus necesidades)
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set AWS Region and Assume Role based on Stage
+        id: set-aws-vars
+        run: |
+          if [ "${{ inputs.stage }}" == "dev" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_DEV }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_DEV }}" >> "$GITHUB_ENV"
+            echo "HOSTED_ZONE=${{ vars.HOSTED_ZONE_DEV }}" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.stage }}" == "qa" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_QA }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_QA }}" >> "$GITHUB_ENV"
+            echo "HOSTED_ZONE=${{ vars.HOSTED_ZONE_QA }}" >> "$GITHUB_ENV"
+          fi
+
+      # Paso 2: Configurar las credenciales de AWS después de que las variables se establezcan correctamente
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}  # Usar el rol dinámico
+          aws-region: ${{ env.AWS_REGION }}        # Usar la región dinámica
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.2.5
+  
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+  
+      - name: Terraform Init
+        id: init
+        env:
+          AWS_BUCKET_NAME: ${{ vars.TERRAFORM_BUCKET }}-${{ inputs.stage }}
+          AWS_BUCKET_KEY_NAME: ${{ vars.TERRAFORM_BUCKET_KEY_NAME }}
+        run: |
+          cd ./IaC
+          terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${AWS_BUCKET_KEY_NAME}" -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform plan
+        id: plan-terraform
+        run: |
+            cd ./IaC
+            terraform plan --var "stage=${{ inputs.stage }}" --var "hosted_zone=${{ env.HOSTED_ZONE }}" --var "domain=${{ inputs.stage }}.${{vars.DOMAIN}}" -out=tfplan
+
+      - name: Terraform apply
+        id: apply-terraform
+        run: |
+            cd ./IaC
+            terraform apply -auto-approve tfplan

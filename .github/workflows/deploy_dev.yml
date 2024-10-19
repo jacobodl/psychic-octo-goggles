@@ -1,0 +1,16 @@
+name: Deploys dev environment
+
+on:
+  push:
+    branches:
+      - dev
+permissions:
+  id-token: write  # Permitir el uso de OIDC
+  contents: read   # Permitir la lectura del repositorio
+
+jobs:
+  deploy-dev-environment:
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      stage: dev

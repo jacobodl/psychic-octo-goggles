@@ -1,1 +1,1 @@
-# psychic-octo-goggles
+# aws-community-day-gt

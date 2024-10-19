@@ -1,0 +1,33 @@
+service: hello-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: ${env:AWS_REGION}  # Región pasada desde el workflow
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: /hello-world
+          method: get
+          cors: true  # Habilitar CORS
+    environment:  # Aquí defines la variable de entorno
+      STAGE: ${self:custom.stage}
+
+
+# Configuración de dominio personalizado
+custom:
+  customDomain:
+    domainName: 'api.${env:API_DOMAIN}'
+    basePath: 'demo'  
+    stage: ${env:STAGE}
+    createRoute53Record: true 
+    endpointType: regional  
+    securityPolicy: tls_1_2  
+  stage: ${env:STAGE}
+
+plugins:
+  - serverless-domain-manager

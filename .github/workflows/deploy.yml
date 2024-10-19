@@ -1,0 +1,87 @@
+name: Reusable AWS Deploy Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Stage for the environment (e.g. dev, qa, prod)'
+        required: true
+        type: string
+        
+  workflow_call:
+    inputs:
+      stage:
+        description: 'Stage for the environment (e.g. dev, qa, prod)'
+        required: true
+        type: string
+permissions:
+  id-token: write  # Permiso necesario para OIDC
+  contents: read   # Permiso para leer el repositorio (opcional, según tus necesidades)
+  
+jobs:
+  checks-terraform-bucket:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Permiso necesario para OIDC
+      contents: read   # Permiso para leer el repositorio (opcional, según tus necesidades)
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set AWS Region and Assume Role based on Stage
+        id: set-aws-vars
+        run: |
+          if [ "${{ inputs.stage }}" == "dev" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_DEV }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_DEV }}" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.stage }}" == "qa" ]; then
+            echo "AWS_REGION=${{ secrets.AWS_REGION_QA }}" >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=${{ secrets.AWS_ROLE_ARN_QA }}" >> "$GITHUB_ENV"
+          fi
+
+      # Paso 2: Configurar las credenciales de AWS después de que las variables se establezcan correctamente
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}  # Usar el rol dinámico
+          aws-region: ${{ env.AWS_REGION }}        # Usar la región dinámica
+
+      # Paso 3: Verificar si el bucket de terraform existe
+      - name: Check if terraform bucket Exists
+        id: check-bucket
+        run: |
+          if aws s3api head-bucket --bucket "${{ vars.TERRAFORM_BUCKET }}-${{ inputs.stage }}" 2>/dev/null; then
+            echo "Bucket ${{ vars.TERRAFORM_BUCKET }}-${{ inputs.stage }} already exists."
+            echo "exists=true" >> $GITHUB_ENV
+          else
+            echo "Bucket ${{ vars.TERRAFORM_BUCKET }}-${{ inputs.stage }} does not exist."
+            echo "exists=false" >> $GITHUB_ENV
+          fi
+  
+      # Paso 4: Crear el bucket de terraform si no existe
+      - name: Create terraform Bucket if it Doesn't Exist
+        id: create-bucket
+        if: env.exists == 'false'
+        run: |
+          aws s3api create-bucket --bucket ${{ vars.TERRAFORM_BUCKET }}-${{ inputs.stage }} --region ${{ env.AWS_REGION }} 
+          echo "Bucket created successfully."
+  
+  deploys-infra:
+    needs: 
+      - checks-terraform-bucket
+    uses: ./.github/workflows/deploy_infra.yml
+    secrets: inherit
+    with:
+      stage: ${{ inputs.stage }}
+
+
+  deploy-sls-api-dev:
+    uses: ./.github/workflows/deploy_api_sls.yml
+    secrets: inherit
+    with:
+      stage: ${{ inputs.stage }}

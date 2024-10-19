@@ -1,23 +1,18 @@
-variable "region" {
-  description = "Region de AWS"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "profile" {
-  description = "Profile de AWS"
-  type        = string
-}
-
 variable "stage" {
   description = "Stage de AWS"
   type        = string
 }
 
-variable "bucket_cdn" {
+variable "domain" {
   type        = string
-  description = "bucket cdn sarbo"
+  description = "Dominio del CDN"
+  
+}
 
+variable "hosted_zone" {
+  type        = string
+  description = "Zona de DNS del dominio"
+  
 }
 
 variable "cdn_cache" {
